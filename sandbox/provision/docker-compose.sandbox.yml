@@ -1,0 +1,44 @@
+# Sandbox Docker Compose stack for PXE boot testing
+#
+# All services use network_mode: host so DHCP/TFTP broadcast protocols
+# work without NAT issues. Requires Docker on the VM (not Docker Desktop).
+#
+# Usage: docker compose -f docker-compose.sandbox.yml up -d
+
+services:
+  pxe-pilot:
+    build:
+      context: /vagrant
+      dockerfile: docker/Dockerfile
+    container_name: pxe-pilot
+    network_mode: host
+    volumes:
+      - ./config:/config:ro
+    environment:
+      - CONFIG_DIR=/config
+      - HOST=0.0.0.0
+      - PORT=8080
+    restart: unless-stopped
+
+  netbootxyz:
+    image: ghcr.io/netbootxyz/netbootxyz:latest
+    container_name: netbootxyz
+    network_mode: host
+    volumes:
+      - netbootxyz-config:/config
+      - netbootxyz-assets:/assets
+    restart: unless-stopped
+
+  dnsmasq:
+    image: jpillora/dnsmasq:latest
+    container_name: dnsmasq
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - ./dnsmasq.conf:/etc/dnsmasq.conf:ro
+    restart: unless-stopped
+
+volumes:
+  netbootxyz-config:
+  netbootxyz-assets:
