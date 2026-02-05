@@ -4,6 +4,7 @@
 # Manages the full sandbox lifecycle:
 #   ./run-demo.sh up      Start netboot VM + create PXE demo VM
 #   ./run-demo.sh down    Destroy both VMs
+#   ./run-demo.sh clean   Full reset: destroy VMs, remove Vagrant state and boxes
 #   ./run-demo.sh status  Show current state
 #   ./run-demo.sh help    Print usage
 #
@@ -173,6 +174,28 @@ cmd_status() {
         || echo "  (cannot reach netboot VM)"
 }
 
+# ---------- clean ----------
+
+cmd_clean() {
+    info "Full sandbox reset..."
+
+    # Run down first to destroy VMs
+    cmd_down 2>/dev/null || true
+
+    # Remove Vagrant state
+    if [ -d "$SCRIPT_DIR/.vagrant" ]; then
+        info "Removing .vagrant directory..."
+        rm -rf "$SCRIPT_DIR/.vagrant"
+    fi
+
+    # Remove downloaded box
+    info "Removing cached Vagrant box (if any)..."
+    vagrant box remove generic/ubuntu2204 --all --force 2>/dev/null || true
+
+    echo ""
+    echo ">>> Sandbox fully reset. Run '$0 up' to start fresh."
+}
+
 # ---------- help ----------
 
 cmd_help() {
@@ -184,6 +207,7 @@ Usage: $0 <command>
 Commands:
   up       Provision netboot VM and create a PXE-booting demo VM
   down     Destroy both VMs and clean up
+  clean    Full reset: destroy VMs, remove Vagrant state and cached boxes
   status   Show the state of sandbox VMs and containers
   help     Show this message
 
@@ -207,6 +231,7 @@ USAGE
 case "${1:-help}" in
     up)     cmd_up     ;;
     down)   cmd_down   ;;
+    clean)  cmd_clean  ;;
     status) cmd_status ;;
     help)   cmd_help   ;;
     *)      die "Unknown command: $1 (try '$0 help')" ;;

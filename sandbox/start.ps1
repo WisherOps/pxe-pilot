@@ -11,6 +11,7 @@
 .PARAMETER Action
     up      Start netboot VM + create PXE demo VM
     down    Destroy both VMs
+    clean   Full reset: destroy VMs, remove Vagrant state and cached boxes
     status  Show current state
 
 .PARAMETER DhcpStart
@@ -33,7 +34,7 @@
 
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet("up", "down", "status")]
+    [ValidateSet("up", "down", "clean", "status")]
     [string]$Action,
 
     [string]$DhcpStart = "192.168.1.200",
@@ -171,6 +172,33 @@ function Invoke-Down {
     Write-Host ">>> Sandbox cleaned up."
 }
 
+# ---------- clean ----------
+
+function Invoke-Clean {
+    Write-Info "Full sandbox reset..."
+
+    # Run down first to destroy VMs
+    try { Invoke-Down } catch { }
+
+    # Remove Vagrant state
+    $vagrantDir = Join-Path $ScriptDir ".vagrant"
+    if (Test-Path $vagrantDir) {
+        Write-Info "Removing .vagrant directory..."
+        Remove-Item $vagrantDir -Recurse -Force
+    }
+
+    # Remove cached box
+    Write-Info "Removing cached Vagrant box (if any)..."
+    Push-Location $ScriptDir
+    try {
+        vagrant box remove generic/ubuntu2204 --all --force 2>$null
+    } catch { }
+    Pop-Location
+
+    Write-Host ""
+    Write-Host ">>> Sandbox fully reset. Run '.\start.ps1 -Action up' to start fresh."
+}
+
 # ---------- status ----------
 
 function Invoke-Status {
@@ -208,5 +236,6 @@ function Invoke-Status {
 switch ($Action) {
     "up"     { Invoke-Up }
     "down"   { Invoke-Down }
+    "clean"  { Invoke-Clean }
     "status" { Invoke-Status }
 }
