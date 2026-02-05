@@ -19,7 +19,9 @@
 
 Vagrant.configure("2") do |config|
   config.vm.define "netboot" do |nb|
-    nb.vm.box = "ubuntu/jammy64"
+    # generic/ubuntu2204 supports VirtualBox, Hyper-V, and VMware
+    # (ubuntu/jammy64 only ships a VirtualBox box)
+    nb.vm.box = "generic/ubuntu2204"
     nb.vm.hostname = "netboot"
 
     # Bridged NIC — same subnet as the host and future PXE clients
