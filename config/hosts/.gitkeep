@@ -1,0 +1,5 @@
+# Per-host TOML configuration files go here
+# Filename format: <mac-address>.toml (lowercase, hyphens)
+# Example: aa-bb-cc-dd-ee-ff.toml
+#
+# See examples/hosts/ for sample configurations
