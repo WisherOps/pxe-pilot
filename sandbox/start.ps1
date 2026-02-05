@@ -1,12 +1,12 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    PXE Boot Testing Sandbox — Windows / Hyper-V launcher.
+    PXE Boot Testing Sandbox -- Windows / Hyper-V launcher.
 
 .DESCRIPTION
     Manages the full sandbox lifecycle on Windows with Hyper-V:
       - Provisions the netboot VM via Vagrant
-      - Creates a blank Gen 2 Hyper-V VM that PXE boots from the network
+      - Creates a blank Gen2 Hyper-V VM that PXE boots from the network
 
 .PARAMETER Action
     up      Start netboot VM + create PXE demo VM
@@ -80,7 +80,7 @@ function Invoke-Up {
     # Check if demo VM already exists
     $existingVm = Get-VM -Name $DemoVmName -ErrorAction SilentlyContinue
     if ($existingVm) {
-        Write-Info "Demo VM '$DemoVmName' already exists — starting it."
+        Write-Info "Demo VM '$DemoVmName' already exists -- starting it."
         if ($existingVm.State -ne "Running") {
             Start-VM -Name $DemoVmName
         }
@@ -117,7 +117,7 @@ function Invoke-Up {
 
     Write-Host ""
     Write-Host "============================================" -ForegroundColor Green
-    Write-Host "  Demo VM started — PXE booting now"         -ForegroundColor Green
+    Write-Host "  Demo VM started -- PXE booting now"         -ForegroundColor Green
     Write-Host "============================================" -ForegroundColor Green
     Write-Host "  The VM will:"
     Write-Host "    1. Request DHCP lease from dnsmasq"
