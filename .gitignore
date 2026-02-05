@@ -62,3 +62,4 @@ sandbox/provision/sandbox-config/hosts/*.toml
 !sandbox/provision/sandbox-config/hosts/.gitkeep
 *.vdi
 *.vhdx
+*.avhdx
