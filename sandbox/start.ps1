@@ -73,6 +73,9 @@ function Invoke-Up {
     Push-Location $ScriptDir
     try {
         vagrant up netboot --provider=hyperv
+        if ($LASTEXITCODE -ne 0) {
+            throw "Vagrant failed (exit code $LASTEXITCODE). Fix the issue above and retry."
+        }
     } finally {
         Pop-Location
     }
