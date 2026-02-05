@@ -44,6 +44,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$env:VAGRANT_PREFERRED_POWERSHELL = "powershell"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $DemoDiskPath = Join-Path $ScriptDir "$DemoVmName.vhdx"
 
