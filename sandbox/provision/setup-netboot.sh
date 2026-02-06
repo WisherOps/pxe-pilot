@@ -4,7 +4,7 @@
 set -euo pipefail
 
 SANDBOX_DIR="/opt/pxe-sandbox"
-PROVISION_SRC="/vagrant/sandbox/provision"
+PROVISION_SRC="/vagrant/provision"
 
 # ---------- defaults (overridable via env) ----------
 DHCP_RANGE_START="${PXE_DHCP_START:-192.168.1.200}"
