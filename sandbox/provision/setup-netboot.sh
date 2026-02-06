@@ -53,6 +53,14 @@ read -r BRIDGE_IFACE BRIDGE_IP < <(detect_bridge_ip) || {
 echo "    Interface: $BRIDGE_IFACE"
 echo "    IP:        $BRIDGE_IP"
 
+# Auto-derive DHCP range from bridge IP subnet if using defaults
+SUBNET_PREFIX="${BRIDGE_IP%.*}"
+if [[ "$DHCP_RANGE_START" == "192.168.1.200" && "$SUBNET_PREFIX" != "192.168.1" ]]; then
+    DHCP_RANGE_START="${SUBNET_PREFIX}.200"
+    DHCP_RANGE_END="${SUBNET_PREFIX}.250"
+    echo "    Auto-adjusted DHCP range to match subnet: ${DHCP_RANGE_START} - ${DHCP_RANGE_END}"
+fi
+
 # ---------- prepare working directory ----------
 mkdir -p "$SANDBOX_DIR/config/hosts"
 
@@ -93,7 +101,7 @@ echo "  Netboot VM IP:    $BRIDGE_IP"
 echo "  DHCP range:       $DHCP_RANGE_START – $DHCP_RANGE_END"
 echo ""
 echo "  Services:"
-echo "    pxe-pilot API:  http://$BRIDGE_IP:8080/health"
+echo "    pxe-pilot API:  http://$BRIDGE_IP:8081/health"
 echo "    netboot.xyz UI: http://$BRIDGE_IP:3000"
 echo "    TFTP:           $BRIDGE_IP:69/udp"
 echo "    DHCP:           $BRIDGE_IP:67/udp"

@@ -17,7 +17,7 @@ services:
     environment:
       - CONFIG_DIR=/config
       - HOST=0.0.0.0
-      - PORT=8080
+      - PORT=8081
     restart: unless-stopped
 
   netbootxyz:
