@@ -188,16 +188,8 @@ function Invoke-Clean {
         Remove-Item $vagrantDir -Recurse -Force
     }
 
-    # Remove cached box
-    Write-Info "Removing cached Vagrant box (if any)..."
-    Push-Location $ScriptDir
-    try {
-        vagrant box remove generic/ubuntu2204 --all --force 2>$null
-    } catch { }
-    Pop-Location
-
     Write-Host ""
-    Write-Host ">>> Sandbox fully reset. Run '.\start.ps1 -Action up' to start fresh."
+    Write-Host ">>> Sandbox reset. Run '.\start.ps1 -Action up' to start fresh."
 }
 
 # ---------- status ----------
