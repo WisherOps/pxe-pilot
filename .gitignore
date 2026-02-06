@@ -55,3 +55,11 @@ config/hosts/*.toml
 # OS
 .DS_Store
 Thumbs.db
+
+# Sandbox
+sandbox/.vagrant/
+sandbox/provision/sandbox-config/hosts/*.toml
+!sandbox/provision/sandbox-config/hosts/.gitkeep
+*.vdi
+*.vhdx
+*.avhdx

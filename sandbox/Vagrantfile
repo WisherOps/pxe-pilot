@@ -1,0 +1,67 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# PXE Boot Testing Sandbox — Vagrantfile
+#
+# Defines the "netboot" VM that runs Docker containers for:
+#   - pxe-pilot    (answer file API on :8080)
+#   - netbootxyz   (TFTP :69, web UI :3000, assets :80)
+#   - dnsmasq      (DHCP :67 with PXE options)
+#
+# The demo (PXE client) VM is created by run-demo.sh / start.ps1 because
+# Vagrant requires a base box with SSH — a PXE client has no OS.
+#
+# Configuration via environment variables:
+#   PXE_BRIDGE       — host network interface for bridging (prompted if unset)
+#   PXE_DHCP_START   — first IP in DHCP range  (default: 192.168.1.200)
+#   PXE_DHCP_END     — last IP in DHCP range   (default: 192.168.1.250)
+#   PXE_HYPERV_SWITCH — Hyper-V virtual switch name (default: External-LAN)
+
+Vagrant.configure("2") do |config|
+  config.vm.define "netboot" do |nb|
+    # generic/ubuntu2204 supports VirtualBox, Hyper-V, and VMware
+    # (ubuntu/jammy64 only ships a VirtualBox box)
+    nb.vm.box = "generic/ubuntu2204"
+    nb.vm.hostname = "netboot"
+
+    # Bridged NIC — same subnet as the host and future PXE clients
+    # On VirtualBox: PXE_BRIDGE selects the host adapter
+    # On Hyper-V:    PXE_HYPERV_SWITCH selects the external virtual switch
+    bridge_iface = ENV["PXE_BRIDGE"] || ENV["PXE_HYPERV_SWITCH"]
+    if bridge_iface
+      nb.vm.network "public_network", bridge: bridge_iface
+    else
+      # Vagrant will prompt for the interface / switch
+      nb.vm.network "public_network"
+    end
+
+    # --- VirtualBox provider ---
+    nb.vm.provider "virtualbox" do |vb|
+      vb.name = "pxe-sandbox-netboot"
+      vb.memory = 2048
+      vb.cpus = 2
+      # Allow promiscuous mode on the bridged adapter so DHCP broadcasts work
+      vb.customize ["modifyvm", :id, "--nicpromisc2", "allow-all"]
+    end
+
+    # --- Hyper-V provider ---
+    nb.vm.provider "hyperv" do |hv|
+      hv.vmname = "pxe-sandbox-netboot"
+      hv.memory = 2048
+      hv.cpus = 2
+      hv.enable_virtualization_extensions = false
+    end
+
+    # Sync repo root to /vagrant — SMB (Hyper-V default) often fails silently
+    nb.vm.synced_folder "..", "/vagrant", type: "rsync",
+      rsync__exclude: [".vagrant/", "*.vhdx"]
+
+    # Pass DHCP range to the provisioner via env vars
+    nb.vm.provision "shell",
+      path: "provision/setup-netboot.sh",
+      env: {
+        "PXE_DHCP_START" => ENV["PXE_DHCP_START"] || "192.168.1.200",
+        "PXE_DHCP_END"   => ENV["PXE_DHCP_END"]   || "192.168.1.250",
+      }
+  end
+end
