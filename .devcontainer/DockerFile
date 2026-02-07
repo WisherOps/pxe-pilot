@@ -1,0 +1,16 @@
+FROM python:3.12-slim
+
+#Avoid package prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+#Intstall system tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  git \
+  curl \
+  jq \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install -r /tmp/requirements.txt
+
+WORKDIR /workspace

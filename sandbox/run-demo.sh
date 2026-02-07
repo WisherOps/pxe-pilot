@@ -1,46 +1,52 @@
 #!/usr/bin/env bash
-# PXE Boot Testing Sandbox — Linux / macOS launcher
+# pxe-pilot sandbox — Linux / macOS launcher
 #
-# Manages the full sandbox lifecycle:
-#   ./run-demo.sh up      Start netboot VM + create PXE demo VM
-#   ./run-demo.sh down    Destroy both VMs
-#   ./run-demo.sh clean   Full reset: destroy VMs, remove Vagrant state and boxes
+# Manages the full sandbox lifecycle with VirtualBox:
+#   ./run-demo.sh up      Start pxe-vm + create PXE demo VM
+#   ./run-demo.sh down    Destroy both VMs and clean up
 #   ./run-demo.sh status  Show current state
 #   ./run-demo.sh help    Print usage
 #
 # Environment variables:
-#   PXE_BRIDGE       — host NIC for bridging (Vagrant prompts if unset)
-#   PXE_DHCP_START   — first IP in DHCP range  (default: 192.168.1.200)
-#   PXE_DHCP_END     — last IP in DHCP range   (default: 192.168.1.250)
-#   DEMO_VM_NAME     — VirtualBox demo VM name  (default: pxe-sandbox-demo)
+#   PXE_MODE         — "isolated" (default) or "bridged"
+#   PXE_BRIDGE       — host NIC name for bridged mode (Vagrant prompts if unset)
+#   PXE_DHCP_START   — first IP in DHCP range  (isolated, default: 10.10.10.100)
+#   PXE_DHCP_END     — last IP in DHCP range   (isolated, default: 10.10.10.200)
+#   DEMO_VM_NAME     — VirtualBox demo VM name  (default: pxe-pilot-demo)
+#   DEMO_VM_RAM      — demo VM RAM in MB        (default: 2048, use 8192 for real installs)
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEMO_VM_NAME="${DEMO_VM_NAME:-pxe-sandbox-demo}"
-DEMO_VM_RAM=5120
+DEMO_VM_NAME="${DEMO_VM_NAME:-pxe-pilot-demo}"
+DEMO_VM_RAM="${DEMO_VM_RAM:-2048}"
 DEMO_VM_CPUS=2
 DEMO_VM_DISK_MB=20480
+PXE_MODE="${PXE_MODE:-isolated}"
 
-# ---------- helpers ----------
+# ── helpers ──────────────────────────────────────────────────────
 
-die()    { echo "ERROR: $*" >&2; exit 1; }
-info()   { echo ">>> $*"; }
+die()  { echo "ERROR: $*" >&2; exit 1; }
+info() { echo ">>> $*"; }
 
 require_cmd() {
     command -v "$1" &>/dev/null || die "'$1' is required but not found in PATH."
 }
 
-# Resolve bridge adapter name for VBoxManage from Vagrant/env
+demo_vm_exists() {
+    VBoxManage showvminfo "$DEMO_VM_NAME" &>/dev/null 2>&1
+}
+
+# Detect which bridge adapter the netboot VM is using
 resolve_bridge() {
     if [ -n "${PXE_BRIDGE:-}" ]; then
         echo "$PXE_BRIDGE"
         return
     fi
 
-    # Try to read from the running netboot VM
+    # Try to read from the running pxe-vm
     local bridged
-    bridged=$(VBoxManage showvminfo pxe-sandbox-netboot --machinereadable 2>/dev/null \
+    bridged=$(VBoxManage showvminfo pxe-pilot-sandbox --machinereadable 2>/dev/null \
         | grep '^bridgeadapter2=' \
         | cut -d'"' -f2) || true
 
@@ -49,25 +55,18 @@ resolve_bridge() {
         return
     fi
 
-    die "Cannot determine bridge adapter. Set PXE_BRIDGE or start netboot VM first."
+    die "Cannot determine bridge adapter. Set PXE_BRIDGE or start pxe-vm first."
 }
 
-demo_vm_exists() {
-    VBoxManage showvminfo "$DEMO_VM_NAME" &>/dev/null 2>&1
-}
-
-# ---------- up ----------
+# ── up ───────────────────────────────────────────────────────────
 
 cmd_up() {
     require_cmd vagrant
     require_cmd VBoxManage
 
-    info "Starting netboot VM..."
-    (cd "$SCRIPT_DIR" && vagrant up netboot)
-
-    local bridge
-    bridge=$(resolve_bridge)
-    info "Using bridge adapter: $bridge"
+    info "Starting pxe-vm ($PXE_MODE mode)..."
+    export PXE_MODE
+    (cd "$SCRIPT_DIR" && vagrant up pxe-vm)
 
     if demo_vm_exists; then
         info "Demo VM '$DEMO_VM_NAME' already exists — starting it."
@@ -75,12 +74,12 @@ cmd_up() {
         return
     fi
 
-    info "Creating demo VM '$DEMO_VM_NAME'..."
+    info "Creating demo VM '$DEMO_VM_NAME' (${DEMO_VM_RAM}MB RAM)..."
 
     # Create VM
     VBoxManage createvm --name "$DEMO_VM_NAME" --ostype "Linux_64" --register
 
-    # Basic settings: RAM, CPUs, boot order (network first)
+    # RAM, CPUs, boot order (network first)
     VBoxManage modifyvm "$DEMO_VM_NAME" \
         --memory "$DEMO_VM_RAM" \
         --cpus "$DEMO_VM_CPUS" \
@@ -89,12 +88,23 @@ cmd_up() {
         --boot3 none \
         --boot4 none
 
-    # NIC: bridged, Intel PRO/1000 for best PXE ROM support
-    VBoxManage modifyvm "$DEMO_VM_NAME" \
-        --nic1 bridged \
-        --bridgeadapter1 "$bridge" \
-        --nictype1 82540EM \
-        --nicpromisc1 allow-all
+    # NIC: connect to the same network as pxe-vm's NIC2
+    if [ "$PXE_MODE" = "bridged" ]; then
+        local bridge
+        bridge=$(resolve_bridge)
+        info "Using bridge adapter: $bridge"
+        VBoxManage modifyvm "$DEMO_VM_NAME" \
+            --nic1 bridged \
+            --bridgeadapter1 "$bridge" \
+            --nictype1 82540EM \
+            --nicpromisc1 allow-all
+    else
+        VBoxManage modifyvm "$DEMO_VM_NAME" \
+            --nic1 intnet \
+            --intnet1 "pxe-pilot-sandbox" \
+            --nictype1 82540EM \
+            --nicpromisc1 allow-all
+    fi
 
     # Storage: SATA controller + virtual disk
     local disk_path
@@ -113,18 +123,25 @@ cmd_up() {
     echo "============================================"
     echo "  Demo VM started — PXE booting now"
     echo "============================================"
-    echo "  The VM will:"
-    echo "    1. Request DHCP lease from dnsmasq"
-    echo "    2. Download netboot.xyz via TFTP"
-    echo "    3. Show the netboot.xyz boot menu"
     echo ""
-    echo "  Select: Linux Network Installs > Proxmox"
-    echo "  The installer will fetch its answer file"
-    echo "  from pxe-pilot automatically."
+    echo "  Mode:   $PXE_MODE"
+    echo "  RAM:    ${DEMO_VM_RAM}MB"
+    echo ""
+    echo "  The VM will:"
+    echo "    1. Get DHCP lease (+ PXE boot info)"
+    echo "    2. Download iPXE via TFTP from pxe-pilot"
+    echo "    3. iPXE loads the boot menu over HTTP"
+    echo "    4. Select a Proxmox version to install"
+    echo ""
+    echo "  SSH into pxe-vm:"
+    echo "    cd sandbox && vagrant ssh pxe-vm"
+    echo ""
+    echo "  Check health:"
+    echo "    vagrant ssh pxe-vm -c 'curl -s localhost:8080/health'"
     echo "============================================"
 }
 
-# ---------- down ----------
+# ── down ─────────────────────────────────────────────────────────
 
 cmd_down() {
     require_cmd VBoxManage
@@ -140,7 +157,7 @@ cmd_down() {
     fi
 
     if [ -d "$SCRIPT_DIR/.vagrant" ]; then
-        info "Destroying netboot VM..."
+        info "Destroying pxe-vm..."
         (cd "$SCRIPT_DIR" && vagrant destroy -f)
     else
         info "No Vagrant state found."
@@ -149,13 +166,11 @@ cmd_down() {
     echo ">>> Sandbox cleaned up."
 }
 
-# ---------- status ----------
+# ── status ───────────────────────────────────────────────────────
 
 cmd_status() {
-    require_cmd VBoxManage
-
-    echo "=== Netboot VM ==="
-    (cd "$SCRIPT_DIR" && vagrant status netboot 2>/dev/null) || echo "  (no Vagrant state)"
+    echo "=== pxe-vm ==="
+    (cd "$SCRIPT_DIR" && vagrant status pxe-vm 2>/dev/null) || echo "  (no Vagrant state)"
     echo ""
 
     echo "=== Demo VM ($DEMO_VM_NAME) ==="
@@ -169,70 +184,62 @@ cmd_status() {
     fi
     echo ""
 
-    echo "=== Docker containers (via netboot VM) ==="
-    (cd "$SCRIPT_DIR" && vagrant ssh netboot -c "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'" 2>/dev/null) \
-        || echo "  (cannot reach netboot VM)"
+    echo "=== Docker containers (via pxe-vm) ==="
+    (cd "$SCRIPT_DIR" && vagrant ssh pxe-vm -c \
+        "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'" 2>/dev/null) \
+        || echo "  (cannot reach pxe-vm)"
 }
 
-# ---------- clean ----------
-
-cmd_clean() {
-    info "Full sandbox reset..."
-
-    # Run down first to destroy VMs
-    cmd_down 2>/dev/null || true
-
-    # Remove Vagrant state
-    if [ -d "$SCRIPT_DIR/.vagrant" ]; then
-        info "Removing .vagrant directory..."
-        rm -rf "$SCRIPT_DIR/.vagrant"
-    fi
-
-    # Remove downloaded box
-    info "Removing cached Vagrant box (if any)..."
-    vagrant box remove generic/ubuntu2204 --all --force 2>/dev/null || true
-
-    echo ""
-    echo ">>> Sandbox fully reset. Run '$0 up' to start fresh."
-}
-
-# ---------- help ----------
+# ── help ─────────────────────────────────────────────────────────
 
 cmd_help() {
     cat <<USAGE
-PXE Boot Testing Sandbox
+pxe-pilot sandbox — test the full PXE boot chain
 
 Usage: $0 <command>
 
 Commands:
-  up       Provision netboot VM and create a PXE-booting demo VM
+  up       Provision pxe-vm and create a PXE-booting demo VM
   down     Destroy both VMs and clean up
-  clean    Full reset: destroy VMs, remove Vagrant state and cached boxes
   status   Show the state of sandbox VMs and containers
   help     Show this message
 
 Environment variables:
-  PXE_BRIDGE       Host NIC for bridged networking (prompted if unset)
-  PXE_DHCP_START   First IP in DHCP range  (default: 192.168.1.200)
-  PXE_DHCP_END     Last IP in DHCP range   (default: 192.168.1.250)
-  DEMO_VM_NAME     Demo VM name            (default: pxe-sandbox-demo)
+  PXE_MODE         Network mode: "isolated" (default) or "bridged"
+  PXE_BRIDGE       Host NIC for bridged mode (prompted if unset)
+  PXE_DHCP_START   First IP in DHCP range  (isolated, default: 10.10.10.100)
+  PXE_DHCP_END     Last IP in DHCP range   (isolated, default: 10.10.10.200)
+  DEMO_VM_NAME     Demo VM name            (default: pxe-pilot-demo)
+  DEMO_VM_RAM      Demo VM RAM in MB       (default: 2048, use 8192 for real installs)
+
+Network modes:
+  isolated   Private intnet (10.10.10.0/24), full DHCP, zero network risk.
+             Best for safe testing and CI.
+
+  bridged    Bridged to your LAN, proxy DHCP (only PXE, no IP assignment).
+             Best for testing with real hardware or when you need internet
+             access from the demo VM without NAT.
 
 Prerequisites:
-  - VirtualBox (with Extension Pack recommended)
+  - VirtualBox (Extension Pack recommended for better PXE ROM)
   - Vagrant
-  - A physical network adapter for bridging
+
+Examples:
+  $0 up                                          # Isolated mode (safe default)
+  PXE_MODE=bridged PXE_BRIDGE=enp0s3 $0 up       # Bridged to host NIC
+  DEMO_VM_RAM=8192 $0 up                          # More RAM for real installs
+  $0 down                                         # Tear everything down
 
 See sandbox/README.md for full documentation.
 USAGE
 }
 
-# ---------- main ----------
+# ── main ─────────────────────────────────────────────────────────
 
 case "${1:-help}" in
-    up)     cmd_up     ;;
-    down)   cmd_down   ;;
-    clean)  cmd_clean  ;;
+    up)     cmd_up ;;
+    down)   cmd_down ;;
     status) cmd_status ;;
-    help)   cmd_help   ;;
+    help)   cmd_help ;;
     *)      die "Unknown command: $1 (try '$0 help')" ;;
 esac

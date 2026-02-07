@@ -1,210 +1,91 @@
 # pxe-pilot
 
-A composable PXE boot config engine for automated Proxmox VE installs using TOML configs.
+HTTP answer file server for Proxmox VE automated installations.
 
-## Overview
+Proxmox 8.2+ supports fetching answer files over HTTP during automated installs.
+The installer POSTs its MAC addresses to a URL and expects a TOML answer file in response.
+pxe-pilot is that URL.
 
-pxe-pilot serves per-host answer files for Proxmox automated installation. It integrates with [netboot.xyz](https://netboot.xyz) for boot delivery, providing a **config engine** that dynamically generates answer files based on the requesting host's MAC address.
+## How it works
 
 ```
-netboot.xyz (DHCP/TFTP/iPXE)  -->  Proxmox installer  -->  pxe-pilot (answer file)
+Machine PXE boots → Proxmox installer starts → installer POSTs MACs to pxe-pilot → pxe-pilot returns TOML → Proxmox installs
 ```
 
-## Features
+Lookup logic:
 
-- **TOML-based configuration** - Human-readable config files
-- **Per-host customization** - Override defaults for each host by MAC address
-- **Simple HTTP API** - Proxmox installer fetches answer file via POST
-- **Docker-ready** - Deploy as container or standalone
-- **Stateless** - No database required, config files are the source of truth
+1. Check `answers/hosts/{mac}.toml` for each MAC in the request
+2. First match wins
+3. No match → return `answers/default.toml`
+4. No default → 404
 
-## Quick Start
+No config merging. No validation. Drop a TOML file, it gets served.
 
-### 1. Install
+## Quick start
 
 ```bash
-# Using pip
-pip install pxe-pilot
-
-# Or using uv
-uv pip install pxe-pilot
-
-# Or run from source
-git clone https://github.com/WisherOps/pxe-pilot.git
-cd pxe-pilot
-pip install -e .
-```
-
-### 2. Configure
-
-Create your config directory:
-
-```bash
-mkdir -p config/hosts
-```
-
-Create `config/defaults.toml`:
-
-```toml
+# Create answer files
+mkdir -p answers/hosts
+cat > answers/default.toml << 'EOF'
 [global]
 keyboard = "en-us"
 country = "us"
-timezone = "America/New_York"
+fqdn = "pxe-node.local"
+mailto = "admin@example.com"
+timezone = "America/Los_Angeles"
+root-password = "changeme"
+reboot-on-error = true
 
 [network]
-dns = "1.1.1.1"
+source = "from-dhcp"
 
-[disk]
-filesystem = "zfs"
-```
+[disk-setup]
+filesystem = "ext4"
+disk_list = ["sda"]
+EOF
 
-Create a host config `config/hosts/aa-bb-cc-dd-ee-ff.toml`:
-
-```toml
-hostname = "pve-node-01"
-
-[network]
-address = "10.0.0.10/24"
-gateway = "10.0.0.1"
-
-[disk]
-target = "/dev/sda"
-```
-
-### 3. Run
-
-```bash
-# Start the server
-pxe-pilot serve --config-dir ./config --port 8080
-
-# Or with environment variables
-CONFIG_DIR=./config PORT=8080 pxe-pilot serve
-```
-
-### 4. Configure netboot.xyz
-
-See [docs/netboot-setup.md](docs/netboot-setup.md) for netboot.xyz configuration instructions.
-
-## Docker
-
-```bash
+# Run
 docker run -d \
   -p 8080:8080 \
-  -v $(pwd)/config:/config \
+  -v ./answers:/answers:ro \
   ghcr.io/wisherops/pxe-pilot:latest
+
+# Verify
+curl http://localhost:8080/health
 ```
 
-Or with docker-compose:
+## Adding a host-specific config
 
-```yaml
-services:
-  pxe-pilot:
-    image: ghcr.io/wisherops/pxe-pilot:latest
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./config:/config
+```bash
+# Filename is the MAC address, lowercase, dashes
+cp answers/default.toml answers/hosts/aa-bb-cc-dd-ee-ff.toml
+# Edit with host-specific values
+# No restart needed — picked up on next request
 ```
+
+## Endpoints
+
+| Method | Path      | Description                                |
+| ------ | --------- | ------------------------------------------ |
+| POST   | `/answer` | Proxmox installer hits this. Returns TOML. |
+| GET    | `/health` | Health check with config summary.          |
 
 ## Configuration
 
-### defaults.toml
-
-Global defaults applied to all hosts:
-
-```toml
-[global]
-keyboard = "en-us"
-country = "us"
-timezone = "America/New_York"
-root_password_hash = "$5$rounds=5000$..."  # SHA-256 hash
-
-[network]
-dns = "1.1.1.1"
-
-[disk]
-filesystem = "zfs"  # or ext4, xfs
-```
-
-### hosts/<mac>.toml
-
-Per-host overrides (MAC address as filename, lowercase with hyphens):
-
-```toml
-hostname = "pve-node-01"
-
-[network]
-address = "10.0.0.10/24"
-gateway = "10.0.0.1"
-dns = "10.0.0.1"  # Override default DNS
-
-[disk]
-target = "/dev/nvme0n1"
-```
-
-## API
-
-### POST /answer
-
-Proxmox installer posts system info, receives answer file.
-
-**Request:**
-```json
-{
-  "network_interfaces": [
-    {"mac": "AA:BB:CC:DD:EE:FF", "name": "eth0"}
-  ]
-}
-```
-
-**Response:**
-```toml
-[global]
-keyboard = "en-us"
-country = "us"
-timezone = "America/New_York"
-
-[network]
-address = "10.0.0.10/24"
-gateway = "10.0.0.1"
-dns = "1.1.1.1"
-
-[disk]
-filesystem = "zfs"
-target = "/dev/sda"
-```
-
-### GET /health
-
-Health check endpoint.
+| Variable                | Default    | Description                      |
+| ----------------------- | ---------- | -------------------------------- |
+| `PXE_PILOT_PORT`        | `8080`     | Listen port                      |
+| `PXE_PILOT_ANSWERS_DIR` | `/answers` | TOML files location              |
+| `PXE_PILOT_LOG_LEVEL`   | `info`     | `debug`, `info`, `warn`, `error` |
 
 ## Development
 
 ```bash
-# Clone and install dev dependencies
-git clone https://github.com/WisherOps/pxe-pilot.git
-cd pxe-pilot
-pip install -e ".[dev]"
-
-# Run tests
-pytest
-
-# Run linter
-ruff check .
-
-# Run formatter
-ruff format .
+# Open in devcontainer (VS Code / Codespaces), then:
+pytest server/tests/ -v
+ruff check server/
 ```
-
-## Architecture
-
-pxe-pilot is designed to work with netboot.xyz for the complete PXE boot chain:
-
-1. **netboot.xyz** handles DHCP, TFTP, and iPXE menu
-2. **Proxmox installer** boots and requests answer file
-3. **pxe-pilot** identifies host by MAC, merges configs, returns answer.toml
-4. **Proxmox** installs automatically with the provided configuration
 
 ## License
 
-MIT License - see [LICENSE](LICENSE)
+TBD

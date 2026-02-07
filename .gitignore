@@ -63,3 +63,5 @@ sandbox/provision/sandbox-config/hosts/*.toml
 *.vdi
 *.vhdx
 *.avhdx
+
+.smoke-test-assets/

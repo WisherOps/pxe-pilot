@@ -1,0 +1,19 @@
+# pxe-pilot default answer file
+# This is returned for any machine that doesn't have a host-specific config.
+# See: https://pve.proxmox.com/wiki/Automated_Installation
+
+[global]
+keyboard = "en-us"
+country = "us"
+fqdn = "pxe-node.local"
+mailto = "admin@example.com"
+timezone = "America/Los_Angeles"
+root-password = "changeme"
+reboot-on-error = true
+
+[network]
+source = "from-dhcp"
+
+[disk-setup]
+filesystem = "ext4"
+disk_list = ["sda"]
