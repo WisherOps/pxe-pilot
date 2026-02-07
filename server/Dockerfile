@@ -2,13 +2,19 @@
 FROM debian:bookworm-slim AS ipxe-builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git gcc make liblzma-dev \
+    git gcc make liblzma-dev ca-certificates libc6-dev \
     && rm -rf /var/lib/apt/lists/*
 
 RUN git clone --depth 1 https://github.com/ipxe/ipxe.git /ipxe
 
 # Embedded script: DHCP then chain to our boot.ipxe
 RUN printf '#!ipxe\ndhcp\nchain http://${next-server}:8080/boot.ipxe\n' > /ipxe/src/embed.ipxe
+
+RUN cd ipxe/src && \
+    sed -i 's/\/\/#define\ PING_CMD/#define\ PING_CMD/' config/general.h && \
+    sed -i 's/\/\/#define\ IPSTAT_CMD/#define\ IPSTAT_CMD/' config/general.h && \
+    sed -i 's/\/\/#define\ REBOOT_CMD/#define\ REBOOT_CMD/' config/general.h && \
+    sed -i 's/\/\/#define\ POWEROFF/#define\ POWEROFF/' config/general.h
 
 # Build BIOS and UEFI binaries
 RUN cd /ipxe/src && make -j$(nproc) bin/undionly.kpxe EMBED=embed.ipxe

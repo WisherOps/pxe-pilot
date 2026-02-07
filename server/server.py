@@ -273,7 +273,8 @@ def start_tftp():
         return None
     logger.info("Starting TFTP server on port %d serving %s", TFTP_PORT, IPXE_DIR)
     proc = subprocess.Popen(
-        ["py3tftp", "--host", "0.0.0.0", "--port", str(TFTP_PORT), "--root", str(IPXE_DIR)],
+        ["py3tftp", "--host", "0.0.0.0", "--port", str(TFTP_PORT)],
+        cwd=str(IPXE_DIR),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )
