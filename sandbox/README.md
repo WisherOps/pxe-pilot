@@ -1,192 +1,232 @@
-# PXE Boot Testing Sandbox
+# pxe-pilot Sandbox
 
-A self-contained environment to test the full PXE boot chain: DHCP, TFTP, netboot.xyz menu, and pxe-pilot answer file delivery.
+Test the full PXE boot chain end-to-end: DHCP → TFTP → iPXE menu → kernel download → answer file delivery.
 
 ## Architecture
 
 ```
 Host Machine
   │
-  ├── Vagrant ──► netboot VM (Ubuntu 22.04, bridged NIC)
+  ├── Vagrant ──► pxe-vm (Ubuntu 22.04)
   │                 └── Docker (network_mode: host)
-  │                       ├── pxe-pilot     :8080  (answer files)
-  │                       ├── netbootxyz    :69/udp (TFTP), :3000 (web UI), :80 (assets)
-  │                       └── dnsmasq       :67/udp (DHCP + PXE options)
+  │                       ├── pxe-pilot   :8080 (HTTP API + menu) + :69/udp (TFTP + iPXE)
+  │                       └── dnsmasq     :67/udp (DHCP with PXE boot options)
   │
-  └── VBoxManage / New-VM ──► demo VM (blank, PXE boot only)
-                                 └── boots from network → DHCP → TFTP → netboot.xyz menu
+  └── Hyper-V / VBox ──► demo VM (blank, PXE boot only)
+                           └── DHCP → TFTP(iPXE) → HTTP menu → kernel + initrd → /answer
 ```
 
-Both VMs bridge to your host's physical network. The netboot VM's Docker uses `network_mode: host` so DHCP/TFTP broadcast protocols work natively.
+## Network Modes
+
+|          | **Isolated** (default for VBox) | **Bridged** (default for Hyper-V)              |
+| -------- | ------------------------------- | ---------------------------------------------- |
+| Network  | Private 10.10.10.0/24           | Your real LAN                                  |
+| DHCP     | Full — dnsmasq assigns IPs      | Proxy — your router assigns IPs                |
+| Internet | NAT via pxe-vm                  | Direct via your router                         |
+| Risk     | **Zero** — completely sandboxed | **Low** — proxy DHCP only talks to PXE clients |
+| Best for | Safe testing, CI, demos         | Real hardware, Hyper-V                         |
 
 ## Prerequisites
 
-### Linux / macOS
-
-- [VirtualBox](https://www.virtualbox.org/) (Extension Pack recommended for better PXE support)
-- [Vagrant](https://www.vagrantup.com/)
-- A physical network adapter (Wi-Fi or Ethernet)
-
-### Windows
+### Windows (Hyper-V)
 
 - [Hyper-V](https://learn.microsoft.com/en-us/virtualization/hyper-v-on-windows/) enabled
 - [Vagrant](https://www.vagrantup.com/)
-- An External virtual switch in Hyper-V Manager (default name: `External-LAN`)
+- An External virtual switch for bridged mode (default name: `External-LAN`)
+
+### Linux / macOS (VirtualBox)
+
+- [VirtualBox](https://www.virtualbox.org/) (Extension Pack recommended for PXE ROM support)
+- [Vagrant](https://www.vagrantup.com/)
 
 ## Quick Start
-
-### Linux / macOS
-
-```bash
-cd sandbox
-./run-demo.sh up
-```
 
 ### Windows (elevated PowerShell)
 
 ```powershell
 cd sandbox
+
+# Bridged mode (default) — uses your External-LAN switch
 .\start.ps1 -Action up
+
+# Isolated mode — private switch, no network risk
+.\start.ps1 -Action up -NetworkMode isolated
+
+# Custom external switch name
+.\start.ps1 -Action up -SwitchName "My External Switch"
+
+# More RAM for real Proxmox installs
+.\start.ps1 -Action up -DemoVmMemoryMB 8192
 ```
 
-This will:
+### Linux / macOS
 
-1. Create and provision the **netboot VM** (Ubuntu 22.04 with Docker)
-2. Build and start the three Docker containers (pxe-pilot, netbootxyz, dnsmasq)
-3. Create a blank **demo VM** that PXE boots from the network
-4. The demo VM gets a DHCP lease, downloads netboot.xyz via TFTP, and shows the boot menu
+```bash
+cd sandbox
+
+# Isolated mode (default) — safest option
+./run-demo.sh up
+
+# Bridged mode — join your LAN
+PXE_MODE=bridged PXE_BRIDGE=enp0s3 ./run-demo.sh up
+
+# More RAM for real Proxmox installs
+DEMO_VM_RAM=8192 ./run-demo.sh up
+```
+
+## What Happens
+
+1. Vagrant creates **pxe-vm** (Ubuntu 22.04) and provisions it:
+   - Installs Docker
+   - Builds the pxe-pilot image from source (`server/Dockerfile`)
+   - Starts pxe-pilot (HTTP + TFTP) and dnsmasq (DHCP) via docker-compose
+   - Creates fake PXE assets for chain testing
+
+2. The launcher creates a blank **demo VM** that PXE boots:
+   - Gets a DHCP lease + PXE boot file info from dnsmasq
+   - Downloads `ipxe.efi` (UEFI) or `undionly.kpxe` (BIOS) via TFTP
+   - iPXE chains to `http://<pxe-vm>:8080/boot.ipxe` → `/menu.ipxe`
+   - Menu shows available Proxmox versions
+   - Selecting a version downloads vmlinuz + initrd over HTTP
+
+With fake assets, the chain validates up to the kernel download (which fails gracefully since the kernel is fake). With real assets from the builder, it performs a full Proxmox installation.
 
 ## Configuration
 
-### Environment Variables (Linux/macOS)
+### Windows Parameters
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PXE_BRIDGE` | *(prompted)* | Host NIC for bridged networking |
-| `PXE_DHCP_START` | `192.168.1.200` | First IP in DHCP range |
-| `PXE_DHCP_END` | `192.168.1.250` | Last IP in DHCP range |
-| `DEMO_VM_NAME` | `pxe-sandbox-demo` | VirtualBox demo VM name |
+| Parameter         | Default          | Description                                |
+| ----------------- | ---------------- | ------------------------------------------ |
+| `-NetworkMode`    | `bridged`        | `bridged` or `isolated`                    |
+| `-SwitchName`     | `External-LAN`   | Hyper-V external switch (bridged mode)     |
+| `-DemoVmName`     | `pxe-pilot-demo` | Demo VM name                               |
+| `-DemoVmMemoryMB` | `2048`           | Demo VM RAM (use `8192` for real installs) |
 
-### Parameters (Windows)
+### Linux / macOS Environment Variables
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `-SwitchName` | `External-LAN` | Hyper-V external virtual switch |
-| `-DhcpStart` | `192.168.1.200` | First IP in DHCP range |
-| `-DhcpEnd` | `192.168.1.250` | Last IP in DHCP range |
-| `-DemoVmName` | `pxe-sandbox-demo` | Hyper-V demo VM name |
+| Variable         | Default          | Description                       |
+| ---------------- | ---------------- | --------------------------------- |
+| `PXE_MODE`       | `isolated`       | `bridged` or `isolated`           |
+| `PXE_BRIDGE`     | _(prompted)_     | Host NIC for bridged mode         |
+| `PXE_DHCP_START` | `10.10.10.100`   | First IP in DHCP range (isolated) |
+| `PXE_DHCP_END`   | `10.10.10.200`   | Last IP in DHCP range (isolated)  |
+| `DEMO_VM_NAME`   | `pxe-pilot-demo` | VirtualBox demo VM name           |
+| `DEMO_VM_RAM`    | `2048`           | Demo VM RAM in MB                 |
 
-### Example: Custom DHCP Range
+## Using Real PXE Assets
+
+By default the sandbox creates fake assets (tiny placeholder files) for chain testing. To test a real Proxmox installation:
+
+1. Start the sandbox: `.\start.ps1 -Action up` (or `./run-demo.sh up`)
+2. SSH into pxe-vm: `vagrant ssh pxe-vm`
+3. Run the builder with a real ISO:
 
 ```bash
-PXE_DHCP_START=10.0.0.200 PXE_DHCP_END=10.0.0.250 ./run-demo.sh up
+# Download Proxmox VE ISO (or copy it in)
+cd /opt/pxe-pilot-sandbox
+
+# Run the builder container
+docker run --rm \
+    -v ./assets:/output \
+    -v /path/to/proxmox-ve_8.4-1.iso:/input/proxmox.iso:ro \
+    pxe-pilot-builder:local
+
+# Restart pxe-pilot to pick up the new assets
+docker compose restart pxe-pilot
 ```
 
+4. Recreate the demo VM with more RAM:
+
 ```powershell
-.\start.ps1 -Action up -DhcpStart 10.0.0.200 -DhcpEnd 10.0.0.250
+.\start.ps1 -Action down
+.\start.ps1 -Action up -DemoVmMemoryMB 8192
 ```
 
 ## Commands
+
+### Windows
+
+```powershell
+.\start.ps1 -Action up       # Start everything
+.\start.ps1 -Action down     # Destroy everything
+.\start.ps1 -Action status   # Check state
+```
 
 ### Linux / macOS
 
 ```bash
 ./run-demo.sh up       # Start everything
 ./run-demo.sh down     # Destroy everything
-./run-demo.sh status   # Check state of VMs and containers
+./run-demo.sh status   # Check state
 ./run-demo.sh help     # Show usage
-```
-
-### Windows
-
-```powershell
-.\start.ps1 -Action up
-.\start.ps1 -Action down
-.\start.ps1 -Action status
 ```
 
 ## Verifying the Setup
 
-Once `up` completes, check that services are running:
-
 ```bash
-# SSH into the netboot VM
-cd sandbox && vagrant ssh netboot
+# SSH into pxe-vm
+cd sandbox && vagrant ssh pxe-vm
 
-# Check containers
+# Check containers are running
 docker ps
 
-# Test pxe-pilot
-curl http://localhost:8080/health
+# Test pxe-pilot health
+curl -s http://localhost:8080/health | python3 -m json.tool
 
-# Check dnsmasq logs
-docker logs dnsmasq
+# View the iPXE menu
+curl -s http://localhost:8080/menu.ipxe
 
-# Exit VM
+# Check iPXE binaries are being served
+ls -la /opt/pxe-pilot-sandbox/
+docker exec pxe-pilot-sandbox-pxe-pilot-1 ls -la /app/ipxe/
+
+# Check dnsmasq is running
+docker logs pxe-pilot-sandbox-dnsmasq-1
+
+# Exit
 exit
-```
-
-From your host (replace `<netboot-ip>` with the VM's bridged IP shown during provisioning):
-
-```bash
-curl http://<netboot-ip>:8080/health          # pxe-pilot API
-open http://<netboot-ip>:3000                  # netboot.xyz web UI
-```
-
-## Sandbox Config Files
-
-The sandbox uses its own test configuration in `provision/sandbox-config/`:
-
-- `defaults.toml` — global defaults (en-us, UTC, ext4, test password)
-- `hosts/*.toml` — per-host overrides (add your own here)
-
-These are copied into the netboot VM at provision time. To update after changing them:
-
-```bash
-cd sandbox && vagrant provision netboot
 ```
 
 ## Teardown
 
-```bash
-./run-demo.sh down     # Linux/macOS
-.\start.ps1 -Action down   # Windows
+```powershell
+.\start.ps1 -Action down     # Windows
 ```
 
-This removes both VMs and all associated disks.
+```bash
+./run-demo.sh down            # Linux / macOS
+```
+
+This removes both VMs, virtual disks, and (in isolated mode) the private Hyper-V switch.
 
 ## Troubleshooting
 
 ### Demo VM doesn't get a DHCP lease
 
-- Make sure the DHCP range doesn't overlap with your existing network's DHCP server
-- Check dnsmasq logs: `vagrant ssh netboot -c "docker logs dnsmasq"`
-- Verify promiscuous mode: the netboot VM needs `--nicpromisc2 allow-all` (set automatically)
+- **Isolated mode:** Check dnsmasq logs: `vagrant ssh pxe-vm -c "cd /opt/pxe-pilot-sandbox && docker compose logs dnsmasq"`
+- **Bridged mode:** Make sure your router's DHCP is working. Proxy DHCP only adds PXE boot info — your router still assigns IPs.
+- Verify both VMs are on the same switch/network.
 
-### Bridge IP detection fails
+### Demo VM gets IP but doesn't PXE boot
 
-The provisioner skips loopback, VirtualBox NAT (`10.0.2.x`), and Docker interfaces. If your bridged adapter isn't detected:
+- Hyper-V Gen2 VMs must have **Secure Boot disabled** (the launcher does this automatically).
+- VirtualBox needs the Extension Pack for best PXE ROM support.
+- Check that pxe-pilot's TFTP is running: `vagrant ssh pxe-vm -c "docker exec pxe-pilot-sandbox-pxe-pilot-1 netstat -ulnp"`
 
-```bash
-PXE_BRIDGE="eth0" vagrant provision netboot
-```
+### iPXE loads but menu fails
 
-### VirtualBox PXE boot shows "No bootable medium"
+- Check the HTTP endpoint: `vagrant ssh pxe-vm -c "curl -s localhost:8080/menu.ipxe"`
+- If the menu is empty, verify assets exist in `/opt/pxe-pilot-sandbox/assets/`.
 
-- Install the [VirtualBox Extension Pack](https://www.virtualbox.org/wiki/Downloads) for better PXE ROM support
-- The demo VM uses `82540EM` (Intel PRO/1000) which has the best PXE compatibility
+### Bridged mode — proxy DHCP not responding
 
-### netboot.xyz menu loads but installers fail
-
-The demo VM needs internet access to download OS installers. Since it's bridged to your physical network, it should get internet via your router. Verify:
-
-- Your router provides a default gateway and DNS
-- The DHCP range IPs can reach the internet
+- Ensure dnsmasq can see PXE broadcast traffic. Check: `vagrant ssh pxe-vm -c "cd /opt/pxe-pilot-sandbox && docker compose logs dnsmasq"`
+- Some corporate networks filter DHCP broadcasts between VLANs.
 
 ### Re-provisioning
 
-To re-detect the network and restart containers without recreating the VM:
+To rebuild the image and restart services without recreating the VM:
 
 ```bash
-cd sandbox && vagrant provision netboot
+cd sandbox && vagrant provision pxe-vm
 ```
