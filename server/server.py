@@ -95,3 +95,48 @@ async def health() -> dict:
         "default_exists": default_exists,
         "host_count": host_count,
     }
+
+
+@app.get("/hosts")
+async def list_hosts() -> dict:
+    """List all configured hosts and default status."""
+    hosts_dir = ANSWERS_DIR / "hosts"
+    default_exists = (ANSWERS_DIR / "default.toml").is_file()
+
+    hosts = []
+    if hosts_dir.is_dir():
+        for f in sorted(hosts_dir.glob("*.toml")):
+            hosts.append(f.stem)  # aa-bb-cc-dd-ee-ff
+
+    return {
+        "default_exists": default_exists,
+        "host_count": len(hosts),
+        "hosts": hosts,
+    }
+
+
+@app.get("/hosts/{mac}")
+async def get_host(mac: str) -> Response:
+    """View the TOML that a specific MAC would receive."""
+    normalized = normalize_mac(mac)
+    host_file = ANSWERS_DIR / "hosts" / f"{normalized}.toml"
+
+    if host_file.is_file():
+        return Response(
+            content=host_file.read_text(),
+            media_type="application/toml",
+            headers={"X-PXE-Pilot-Source": f"hosts/{normalized}.toml"},
+        )
+
+    default_file = ANSWERS_DIR / "default.toml"
+    if default_file.is_file():
+        return Response(
+            content=default_file.read_text(),
+            media_type="application/toml",
+            headers={"X-PXE-Pilot-Source": "default.toml"},
+        )
+
+    return JSONResponse(
+        status_code=404,
+        content={"error": f"No config found for {normalized} and no default.toml"},
+    )
