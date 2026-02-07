@@ -4,9 +4,12 @@
 
 [global]
 keyboard = "en-us"
-timezone = "UTC"
-root_password = "changeme"
-reboot_on_error = true
+country = "us"
+fqdn = "pxe-node.local"
+mailto = "admin@example.com"
+timezone = "America/Los_Angeles"
+root-password = "changeme"
+reboot-on-error = true
 
 [network]
 source = "from-dhcp"
