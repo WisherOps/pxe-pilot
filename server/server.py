@@ -10,6 +10,9 @@ from fastapi.responses import JSONResponse
 # Configuration from environment
 ANSWERS_DIR = Path(os.getenv("PXE_PILOT_ANSWERS_DIR", "/answers"))
 LOG_LEVEL = os.getenv("PXE_PILOT_LOG_LEVEL", "info").upper()
+ASSETS_DIR = Path(os.getenv("PXE_PILOT_ASSETS_DIR", "/assets"))
+ASSET_URL = os.getenv("PXE_PILOT_ASSET_URL", "")  # Auto-detected from request if empty
+
 
 logging.basicConfig(level=getattr(logging, LOG_LEVEL, logging.INFO))
 logger = logging.getLogger("pxe-pilot")
@@ -140,3 +143,114 @@ async def get_host(mac: str) -> Response:
         status_code=404,
         content={"error": f"No config found for {normalized} and no default.toml"},
     )
+
+
+# Product display names
+PRODUCT_NAMES = {
+    "proxmox-ve": "Proxmox VE",
+    "proxmox-bs": "Proxmox BS",
+    "proxmox-mg": "Proxmox MG",
+}
+
+KERNEL_OPTS = "vga=791 video=vesafb:ywrap,mtrr ramdisk_size=16777216 rw quiet splash=silent proxmox-start-auto-installer"
+
+
+def scan_assets() -> dict[str, list[str]]:
+    """Scan assets directory for available products and versions.
+
+    Returns dict of product -> sorted list of versions (newest first).
+    """
+    products = {}
+    if not ASSETS_DIR.is_dir():
+        return products
+
+    for product_dir in sorted(ASSETS_DIR.iterdir()):
+        if not product_dir.is_dir():
+            continue
+        versions = []
+        for version_dir in product_dir.iterdir():
+            if not version_dir.is_dir():
+                continue
+            # Must have both vmlinuz and initrd
+            if (version_dir / "vmlinuz").is_file() and (version_dir / "initrd").is_file():
+                versions.append(version_dir.name)
+        if versions:
+            # Sort versions descending (newest first)
+            versions.sort(
+                key=lambda v: [int(x) for x in v.replace("-", ".").split(".") if x.isdigit()],
+                reverse=True,
+            )
+            products[product_dir.name] = versions
+
+    return products
+
+
+def get_asset_base_url(request: Request) -> str:
+    """Determine base URL for assets, from config or request."""
+    if ASSET_URL:
+        return ASSET_URL.rstrip("/")
+    # Auto-detect from request
+    host = request.headers.get("host", "localhost:8080")
+    scheme = request.headers.get("x-forwarded-proto", "http")
+    return f"{scheme}://{host}"
+
+
+@app.get("/boot.ipxe")
+async def boot_ipxe() -> Response:
+    """Initial iPXE bootstrap script. Chains to /menu.ipxe."""
+    script = "#!ipxe\nchain /menu.ipxe\n"
+    return Response(content=script, media_type="text/plain")
+
+
+@app.get("/menu.ipxe")
+async def menu_ipxe(request: Request) -> Response:
+    """Dynamic iPXE menu generated from available assets."""
+    products = scan_assets()
+    base_url = get_asset_base_url(request)
+
+    lines = ["#!ipxe", "", "menu pxe-pilot: Select Installation"]
+
+    if not products:
+        lines.append("item --gap -- No boot assets found.")
+        lines.append("item --gap -- Run pxe-pilot-builder to create assets.")
+        lines.append("item exit Exit to iPXE shell")
+        lines.append("choose selected || goto exit")
+        lines.append("")
+        lines.append(":exit")
+        lines.append("shell")
+        return Response(content="\n".join(lines) + "\n", media_type="text/plain")
+
+    # Menu items
+    for product, versions in products.items():
+        display_name = PRODUCT_NAMES.get(product, product)
+        lines.append(f"item --gap -- === {display_name} ===")
+        for version in versions:
+            item_id = f"{product}-{version}"
+            lines.append(f"item {item_id} {display_name} {version}")
+
+    lines.append("item --gap --")
+    lines.append("item exit Exit to iPXE shell")
+    lines.append("choose selected && goto ${selected} || goto exit")
+    lines.append("")
+
+    # Boot targets
+    for product, versions in products.items():
+        for version in versions:
+            item_id = f"{product}-{version}"
+            lines.append(f":{item_id}")
+            lines.append(f"kernel {base_url}/assets/{product}/{version}/vmlinuz {KERNEL_OPTS}")
+            lines.append(f"initrd {base_url}/assets/{product}/{version}/initrd")
+            lines.append("boot || goto menu")
+            lines.append("")
+
+    lines.append(":exit")
+    lines.append("shell")
+
+    return Response(content="\n".join(lines) + "\n", media_type="text/plain")
+
+
+from fastapi.staticfiles import StaticFiles
+
+# Mount static assets (only if directory exists at startup)
+if ASSETS_DIR.is_dir():
+    app.mount("/assets", StaticFiles(directory=str(ASSETS_DIR)), name="assets")
