@@ -1,7 +1,7 @@
 FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    wget gnupg2 cpio zstd ca-certificates \
+    wget gnupg2 cpio zstd ca-certificates xorriso \
     && rm -rf /var/lib/apt/lists/*
 
 # Add Proxmox repo for proxmox-auto-install-assistant

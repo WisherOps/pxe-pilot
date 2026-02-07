@@ -24,7 +24,7 @@ PRODUCT_NAMES = {
     "proxmox-bs": "Proxmox BS",
     "proxmox-mg": "Proxmox MG",
 }
-KERNEL_OPTS = "vga=791 video=vesafb:ywrap,mtrr ramdisk_size=16777216 rw quiet splash=silent proxmox-start-auto-installer"
+KERNEL_OPTS = "vga=791 video=vesafb:ywrap,mtrr ramdisk_size=2147483648 rw quiet splash=silent proxmox-start-auto-installer"
 
 logging.basicConfig(level=getattr(logging, LOG_LEVEL, logging.INFO))
 logger = logging.getLogger("pxe-pilot")
