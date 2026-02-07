@@ -1,0 +1,21 @@
+# Normalize text handling across Linux containers and Windows dev boxes
+* text=auto
+
+# Enforce LF endings for Unix-oriented tooling
+*.sh text eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+Dockerfile text eol=lf
+*.md text eol=lf
+
+# Keep Windows-native scripts with CRLF endings
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+
+# Treat disk images and other binary blobs as binary to avoid diff noise
+*.vhdx binary
+*.avhdx binary
+*.iso binary
+*.img binary

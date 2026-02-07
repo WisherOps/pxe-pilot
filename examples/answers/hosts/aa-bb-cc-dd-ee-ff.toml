@@ -1,0 +1,20 @@
+# Host-specific answer file
+# Filename must be the MAC address in aa-bb-cc-dd-ee-ff format.
+# This file is served instead of default.toml when the MAC matches.
+
+[global]
+keyboard = "en-us"
+timezone = "America/New_York"
+root_password = "changeme"
+reboot_on_error = true
+
+[network]
+source = "from-answer"
+cidr = "10.0.0.10/24"
+gateway = "10.0.0.1"
+dns = "10.0.0.1"
+
+[disk-setup]
+filesystem = "zfs"
+zfs.raid = "raid1"
+disk_list = ["sda", "sdb"]

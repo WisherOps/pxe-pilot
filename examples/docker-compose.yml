@@ -1,0 +1,8 @@
+services:
+  pxe-pilot:
+    image: ghcr.io/wisherops/pxe-pilot:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./answers:/answers:ro
+    restart: unless-stopped
