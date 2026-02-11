@@ -143,4 +143,4 @@ ruff format --check server/
 
 ## License
 
-TBD
+MIT License - see [LICENSE](LICENSE) for details
