@@ -30,13 +30,7 @@ jobs:
       - name: Run tests with coverage
         working-directory: ./server
         run: |
-          pytest tests/ -v --cov=. --cov-report=term-missing
-
-      - name: Check test coverage
-        working-directory: ./server
-        run: |
-          pytest tests/ --cov=. --cov-report=json
-          python -c "import json; cov = json.load(open('coverage.json')); exit(0 if cov['totals']['percent_covered'] >= 80 else 1)"
+          pytest tests/ -v --cov=. --cov-report=term-missing --cov-fail-under=80
 
   lint:
     name: Lint Server Code
