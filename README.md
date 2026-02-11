@@ -1,6 +1,6 @@
 # pxe-pilot
 
-![CI Status](https://github.com/WisherOps/pxe-pilot/workflows/CI/badge.svg)
+![CI Status](https://github.com/WisherOps/pxe-pilot/actions/workflows/ci.yml/badge.svg)
 
 HTTP answer file server for Proxmox VE automated installations.
 
