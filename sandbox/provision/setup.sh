@@ -70,14 +70,15 @@ else
     info "Docker already installed."
 fi
 
-# ── Build pxe-pilot image ───────────────────────────────────────
+# ── Pull pxe-pilot image ────────────────────────────────────────
 
-info "Building pxe-pilot image from /vagrant/server ..."
-docker build -t pxe-pilot:local /vagrant/server
+info "Pulling pxe-pilot image from GitHub Container Registry..."
+docker pull ghcr.io/wisherops/pxe-pilot-server:latest
 
 # ── Create work directory + fake assets ──────────────────────────
 
 mkdir -p "$WORK_DIR/assets"
+chown -R vagrant:vagrant "$WORK_DIR"
 
 if [ ! -d "$WORK_DIR/assets/proxmox-ve" ]; then
     info "Creating fake PXE assets for chain testing..."
@@ -171,7 +172,7 @@ info "Writing docker-compose.yml..."
 cat > "$WORK_DIR/docker-compose.yml" <<EOF
 services:
   pxe-pilot:
-    image: pxe-pilot:local
+    image: ghcr.io/wisherops/pxe-pilot-server:latest
     network_mode: host
     restart: unless-stopped
     volumes:
