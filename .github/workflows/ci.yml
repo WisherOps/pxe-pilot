@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Test Server
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        working-directory: ./server
+        run: |
+          pip install -r requirements.txt
+          pip install -r ../requirements-dev.txt
+
+      - name: Run tests with coverage
+        working-directory: ./server
+        run: |
+          pytest tests/ -v --cov=. --cov-report=term-missing
+
+      - name: Check test coverage
+        working-directory: ./server
+        run: |
+          pytest tests/ --cov=. --cov-report=json
+          python -c "import json; cov = json.load(open('coverage.json')); exit(0 if cov['totals']['percent_covered'] >= 80 else 1)"
+
+  lint:
+    name: Lint Server Code
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Run ruff check
+        run: ruff check server/
+
+      - name: Run ruff format check
+        run: ruff format --check server/
