@@ -7,8 +7,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  SERVER_IMAGE_NAME: ${{ github.repository }}-server
-  BUILDER_IMAGE_NAME: ${{ github.repository }}-builder
+  REPO_OWNER: wisherops
+  REPO_NAME: pxe-pilot
 
 jobs:
   build-and-push-server:
@@ -47,10 +47,10 @@ jobs:
           file: ./server/Dockerfile
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.SERVER_IMAGE_NAME }}:latest
-            ${{ env.REGISTRY }}/${{ env.SERVER_IMAGE_NAME }}:${{ steps.meta.outputs.version }}
-            ${{ env.REGISTRY }}/${{ env.SERVER_IMAGE_NAME }}:${{ steps.meta.outputs.minor }}
-            ${{ env.REGISTRY }}/${{ env.SERVER_IMAGE_NAME }}:${{ steps.meta.outputs.major }}
+            ${{ env.REGISTRY }}/${{ env.REPO_OWNER }}/${{ env.REPO_NAME }}-server:latest
+            ${{ env.REGISTRY }}/${{ env.REPO_OWNER }}/${{ env.REPO_NAME }}-server:${{ steps.meta.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.REPO_OWNER }}/${{ env.REPO_NAME }}-server:${{ steps.meta.outputs.minor }}
+            ${{ env.REGISTRY }}/${{ env.REPO_OWNER }}/${{ env.REPO_NAME }}-server:${{ steps.meta.outputs.major }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.version=${{ steps.meta.outputs.version }}
@@ -95,10 +95,10 @@ jobs:
           file: ./builder/Dockerfile
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.BUILDER_IMAGE_NAME }}:latest
-            ${{ env.REGISTRY }}/${{ env.BUILDER_IMAGE_NAME }}:${{ steps.meta.outputs.version }}
-            ${{ env.REGISTRY }}/${{ env.BUILDER_IMAGE_NAME }}:${{ steps.meta.outputs.minor }}
-            ${{ env.REGISTRY }}/${{ env.BUILDER_IMAGE_NAME }}:${{ steps.meta.outputs.major }}
+            ${{ env.REGISTRY }}/${{ env.REPO_OWNER }}/${{ env.REPO_NAME }}-builder:latest
+            ${{ env.REGISTRY }}/${{ env.REPO_OWNER }}/${{ env.REPO_NAME }}-builder:${{ steps.meta.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.REPO_OWNER }}/${{ env.REPO_NAME }}-builder:${{ steps.meta.outputs.minor }}
+            ${{ env.REGISTRY }}/${{ env.REPO_OWNER }}/${{ env.REPO_NAME }}-builder:${{ steps.meta.outputs.major }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.version=${{ steps.meta.outputs.version }}
@@ -133,12 +133,12 @@ jobs:
           ## Docker Images
 
           **Server:**
-          - \`docker pull ${{ env.REGISTRY }}/${{ env.SERVER_IMAGE_NAME }}:${{ steps.meta.outputs.version }}\`
-          - \`docker pull ${{ env.REGISTRY }}/${{ env.SERVER_IMAGE_NAME }}:latest\`
+          - \`docker pull ${{ env.REGISTRY }}/${{ env.REPO_OWNER }}/${{ env.REPO_NAME }}-server:${{ steps.meta.outputs.version }}\`
+          - \`docker pull ${{ env.REGISTRY }}/${{ env.REPO_OWNER }}/${{ env.REPO_NAME }}-server:latest\`
 
           **Builder:**
-          - \`docker pull ${{ env.REGISTRY }}/${{ env.BUILDER_IMAGE_NAME }}:${{ steps.meta.outputs.version }}\`
-          - \`docker pull ${{ env.REGISTRY }}/${{ env.BUILDER_IMAGE_NAME }}:latest\`
+          - \`docker pull ${{ env.REGISTRY }}/${{ env.REPO_OWNER }}/${{ env.REPO_NAME }}-builder:${{ steps.meta.outputs.version }}\`
+          - \`docker pull ${{ env.REGISTRY }}/${{ env.REPO_OWNER }}/${{ env.REPO_NAME }}-builder:latest\`
 
           ## What's Changed
 
