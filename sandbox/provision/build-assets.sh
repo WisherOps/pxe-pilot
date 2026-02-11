@@ -1,41 +1,69 @@
 #!/usr/bin/env bash
-# sandbox/provision/build-assets.sh
+# Build real PXE assets from Proxmox ISO using the published builder
 #
-# Downloads a Proxmox ISO and runs the builder to create real PXE assets.
-# Run inside pxe-vm:  vagrant ssh pxe-vm -c 'sudo /vagrant/sandbox/provision/build-assets.sh'
+# Usage:
+#   vagrant ssh pxe-vm -c 'bash /vagrant/sandbox/provision/build-assets.sh'
 #
-# Environment:
-#   ISO_URL         — Proxmox ISO URL (default: proxmox-ve_9.1-1)
-#   COMPRESS_LEVEL  — zstd level 1-19 (default: 1 for fast testing)
+# Environment variables:
+#   ISO_URL          — Proxmox ISO to download (default: proxmox-ve_9.1-1)
+#   ANSWER_URL       — URL for answer file server (optional, auto-detected)
+#   ZSTD_LEVEL       — Compression level 1-22 (default: 1 for fast testing)
+#   SKIP_VERIFY      — Set to "true" to skip ISO checksum verification
 
 set -euo pipefail
 
-ISO_URL="${ISO_URL:-https://enterprise.proxmox.com/iso/proxmox-ve_9.1-1.iso}"
-COMPRESS_LEVEL="${COMPRESS_LEVEL:-1}"
 WORK_DIR="/opt/pxe-pilot-sandbox"
-ISO_FILE="$WORK_DIR/$(basename "$ISO_URL")"
+ISO_URL="${ISO_URL:-https://enterprise.proxmox.com/iso/proxmox-ve_9.1-1.iso}"
+ANSWER_URL="${ANSWER_URL:-}"
+ZSTD_LEVEL="${ZSTD_LEVEL:-1}"
+SKIP_VERIFY="${SKIP_VERIFY:-false}"
 
 info() { echo ">>> $*"; }
+error() { echo "ERROR: $*" >&2; exit 1; }
 
-# Build the builder image
-info "Building pxe-pilot-builder image..."
-docker build -t pxe-pilot-builder:local /vagrant/builder
+# Detect ANSWER_URL from running pxe-pilot container if not set
+if [ -z "$ANSWER_URL" ]; then
+    PXE_IP=$(docker inspect pxe-pilot-sandbox-pxe-pilot-1 2>/dev/null \
+        --format '{{range .Config.Env}}{{println .}}{{end}}' \
+        | grep PXE_PILOT_ASSET_URL \
+        | cut -d= -f2 \
+        | cut -d: -f2 \
+        | tr -d '/' || echo "")
 
-# Download ISO if not already present
-if [ -f "$ISO_FILE" ]; then
-    info "ISO already exists: $ISO_FILE (skipping download)"
-else
-    info "Downloading $ISO_URL ..."
-    curl -L -o "$ISO_FILE" "$ISO_URL"
+    if [ -n "$PXE_IP" ]; then
+        ANSWER_URL="http://${PXE_IP}:8080/answer"
+    else
+        # Fallback to common defaults
+        if ip addr show eth1 &>/dev/null; then
+            ANSWER_URL="http://10.10.10.1:8080/answer"  # Isolated mode
+        else
+            error "Could not detect answer URL. Set ANSWER_URL environment variable."
+        fi
+    fi
 fi
 
-# Run the builder
-info "Running builder (compress level: $COMPRESS_LEVEL)..."
-docker run --rm \
-    -v "$WORK_DIR/assets:/output" \
-    -v "$ISO_FILE:/input/proxmox.iso:ro" \
-    -e "COMPRESS_LEVEL=$COMPRESS_LEVEL" \
-    pxe-pilot-builder:local
+info "Building real PXE assets..."
+info "  ISO URL:     $ISO_URL"
+info "  Answer URL:  $ANSWER_URL"
+info "  ZSTD Level:  $ZSTD_LEVEL"
+info "  Output:      $WORK_DIR/assets"
+
+# Build command
+CMD=(
+    docker run --rm --privileged
+    -v "$WORK_DIR/assets:/output"
+    ghcr.io/wisherops/pxe-pilot-builder:latest
+    --iso-url "$ISO_URL"
+    --answer-url "$ANSWER_URL"
+    --zstd-level "$ZSTD_LEVEL"
+)
+
+if [ "$SKIP_VERIFY" = "true" ]; then
+    CMD+=(--skip-verify)
+fi
+
+# Run builder
+"${CMD[@]}"
 
 # Restart pxe-pilot to pick up new assets
 info "Restarting pxe-pilot..."
@@ -45,7 +73,7 @@ docker compose restart pxe-pilot
 # Verify
 sleep 2
 info "Menu now shows:"
-curl -s localhost:8080/menu.ipxe
+curl -s localhost:8080/menu.ipxe || curl -s http://10.10.10.1:8080/menu.ipxe
 
 echo ""
-info "Done. Recreate the demo VM with 8GB RAM for a real install."
+info "Done! Recreate the demo VM with 8GB+ RAM for a real Proxmox install."

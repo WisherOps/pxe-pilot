@@ -115,31 +115,84 @@ With fake assets, the chain validates up to the kernel download (which fails gra
 
 ## Using Real PXE Assets
 
-By default the sandbox creates fake assets (tiny placeholder files) for chain testing. To test a real Proxmox installation:
+By default the sandbox creates fake assets (tiny placeholder files) for chain testing. To test a real Proxmox installation, build real assets using the helper script:
 
-1. Start the sandbox: `.\start.ps1 -Action up` (or `./run-demo.sh up`)
-2. SSH into pxe-vm: `vagrant ssh pxe-vm`
-3. Run the builder with a real ISO:
+### Quick Method (Download ISO Automatically)
 
 ```bash
-# Download Proxmox VE ISO (or copy it in)
-cd /opt/pxe-pilot-sandbox
+# SSH into pxe-vm
+vagrant ssh pxe-vm
 
-# Run the builder container
-docker run --rm \
-    -v ./assets:/output \
-    -v /path/to/proxmox-ve_8.4-1.iso:/input/proxmox.iso:ro \
-    pxe-pilot-builder:local
+# Build assets from ISO URL (defaults to 9.1-1)
+bash /vagrant/sandbox/provision/build-assets.sh
 
-# Restart pxe-pilot to pick up the new assets
-docker compose restart pxe-pilot
+# Or specify a different version
+ISO_URL=https://enterprise.proxmox.com/iso/proxmox-ve_8.4-1.iso \
+  bash /vagrant/sandbox/provision/build-assets.sh
 ```
 
-4. Recreate the demo VM with more RAM:
+The script will:
+1. Pull the builder image
+2. Download the ISO
+3. Build PXE assets (kernel + initrd with embedded ISO)
+4. Save to `/opt/pxe-pilot-sandbox/assets/proxmox-ve/9.1-1/`
 
+**Options:**
+```bash
+# Fast compression (quicker build, larger files)
+ZSTD_LEVEL=1 bash /vagrant/sandbox/provision/build-assets.sh
+
+# Production compression (slow build, smaller files)
+ZSTD_LEVEL=19 bash /vagrant/sandbox/provision/build-assets.sh
+
+# Skip ISO checksum verification (if checksum unavailable)
+SKIP_VERIFY=true ISO_URL=<url> bash /vagrant/sandbox/provision/build-assets.sh
+
+# Custom answer URL (for bridged mode or custom IP)
+ANSWER_URL=http://192.168.1.10:8080/answer bash /vagrant/sandbox/provision/build-assets.sh
+```
+
+### Using a Local ISO
+
+If you already have the ISO:
+
+```bash
+vagrant ssh pxe-vm
+
+# Copy ISO into VM (from host)
+# Or mount a shared folder with the ISO
+
+# Run builder with local ISO
+docker run --rm --privileged \
+  -v /opt/pxe-pilot-sandbox/assets:/output \
+  -v /path/to/proxmox.iso:/input/proxmox.iso:ro \
+  ghcr.io/wisherops/pxe-pilot-builder:latest \
+  --iso /input/proxmox.iso \
+  --answer-url http://10.10.10.1:8080/answer
+```
+
+### After Building Assets
+
+**Restart pxe-pilot** to pick up new assets:
+```bash
+cd /opt/pxe-pilot-sandbox
+docker compose restart pxe-pilot
+
+# Verify menu shows new version
+curl http://10.10.10.1:8080/menu.ipxe
+```
+
+**Recreate demo VM with more RAM** (8GB minimum for Proxmox):
 ```powershell
+# Windows
 .\start.ps1 -Action down
 .\start.ps1 -Action up -DemoVmMemoryMB 8192
+```
+
+```bash
+# Linux/macOS
+./run-demo.sh down
+DEMO_VM_RAM=8192 ./run-demo.sh up
 ```
 
 ## Commands
