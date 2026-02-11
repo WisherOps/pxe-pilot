@@ -2,41 +2,36 @@
 
 ![CI Status](https://github.com/WisherOps/pxe-pilot/actions/workflows/ci.yml/badge.svg)
 
-HTTP answer file server for Proxmox VE automated installations.
+Automated Proxmox VE installations via PXE boot. Drop a TOML file, PXE boot a machine, get a working Proxmox cluster.
 
-Proxmox 8.2+ supports fetching answer files over HTTP during automated installs.
-The installer POSTs its MAC addresses to a URL and expects a TOML answer file in response.
-pxe-pilot is that URL.
+## What it does
 
-## How it works
+**pxe-pilot** is two Docker images:
 
-```
-Machine PXE boots → Proxmox installer starts → installer POSTs MACs to pxe-pilot → pxe-pilot returns TOML → Proxmox installs
-```
+- **Server** (`ghcr.io/wisherops/pxe-pilot-server`) - HTTP server that receives MAC addresses from the Proxmox installer and returns the correct TOML answer file
+- **Builder** (`ghcr.io/wisherops/pxe-pilot-builder`) - CLI tool that prepares Proxmox ISOs for PXE boot
 
-Lookup logic:
-
-1. Check `answers/hosts/{mac}.toml` for each MAC in the request
-2. First match wins
-3. No match → return `answers/default.toml`
-4. No default → 404
-
-No config merging. No validation. Drop a TOML file, it gets served.
+The Proxmox installer boots over PXE, asks pxe-pilot for its configuration, installs automatically.
 
 ## Quick start
 
 ```bash
-# Create answer files
-mkdir -p answers/hosts
+# 1. Build PXE boot assets from a Proxmox ISO
+docker run --rm --privileged -v ./assets:/output \
+  ghcr.io/wisherops/pxe-pilot-builder:latest \
+  --iso-url https://enterprise.proxmox.com/iso/proxmox-ve_9.1-1.iso \
+  --answer-url http://10.0.0.5:8080/answer
+
+# 2. Create your answer file
+mkdir -p answers
 cat > answers/default.toml << 'EOF'
 [global]
 keyboard = "en-us"
 country = "us"
-fqdn = "pxe-node.local"
+fqdn = "pve-node.local"
 mailto = "admin@example.com"
 timezone = "America/Los_Angeles"
 root-password = "changeme"
-reboot-on-error = true
 
 [network]
 source = "from-dhcp"
@@ -46,46 +41,104 @@ filesystem = "ext4"
 disk_list = ["sda"]
 EOF
 
-# Run
-docker run -d \
-  -p 8080:8080 \
+# 3. Start the server
+docker run -d --name pxe-pilot --network host \
   -v ./answers:/answers:ro \
-  ghcr.io/wisherops/pxe-pilot:latest
+  -v ./assets:/assets:ro \
+  -e PXE_PILOT_BOOT_ENABLED=true \
+  ghcr.io/wisherops/pxe-pilot-server:latest
 
-# Verify
-curl http://localhost:8080/health
+# 4. Configure your DHCP server
+#    Option 66 (next-server): 10.0.0.5
+#    Option 67 (boot-file):   undionly.kpxe (BIOS) or ipxe.efi (UEFI)
+
+# 5. PXE boot a machine
 ```
 
-## Adding a host-specific config
+The machine boots, installs Proxmox automatically, reboots into your new node.
 
-```bash
-# Filename is the MAC address, lowercase, dashes
-cp answers/default.toml answers/hosts/aa-bb-cc-dd-ee-ff.toml
-# Edit with host-specific values
-# No restart needed — picked up on next request
+## Features
+
+- **Zero manual input** - Boot a machine, walk away
+- **MAC-based targeting** - Different configs per machine
+- **Multi-version support** - Boot PVE 8.4, 9.1, or PBS from one menu
+- **Dynamic menus** - New versions appear automatically when built
+- **Built-in TFTP** - No netboot.xyz required (but works with it)
+- **Small images** - Server is ~50MB, builder handles ISO processing
+
+## Architecture
+
 ```
+Machine PXE boots
+  ↓
+DHCP tells it where to find pxe-pilot
+  ↓
+pxe-pilot TFTP serves iPXE binary
+  ↓
+iPXE loads pxe-pilot menu (auto-generated from assets/)
+  ↓
+User selects Proxmox version
+  ↓
+Proxmox installer boots, POSTs MAC addresses to pxe-pilot
+  ↓
+pxe-pilot returns the right TOML (host-specific or default)
+  ↓
+Proxmox installs automatically
+```
+
+## Documentation
+
+- **[Quickstart Guide](docs/quickstart.md)** - Get running in 10 minutes
+- **[Configuration Reference](docs/configuration.md)** - All environment variables and options
+- **[Builder Guide](docs/builder.md)** - Prepare Proxmox ISOs for PXE boot
+- **[Answer Files](docs/answer-files.md)** - Create and manage TOML configurations
+- **Deployment Scenarios:**
+  - [Bare-bones (recommended)](docs/deployment/bare-bones.md) - pxe-pilot only, no netboot.xyz
+  - [With netboot.xyz](docs/deployment/with-netboot.md) - Integrate with existing netboot.xyz
+  - [HTTP-only mode](docs/deployment/http-only.md) - Use your own TFTP/PXE infrastructure
+
+## Requirements
+
+- Docker
+- Network with DHCP server you control
+- 8GB+ RAM on target machines (to load PXE boot assets)
+
+## How answer files work
+
+No merging. No validation. Simple file lookup:
+
+1. Proxmox installer POSTs its MAC addresses
+2. pxe-pilot checks `answers/hosts/{mac}.toml` for each MAC
+3. First match wins
+4. No match → return `answers/default.toml`
+5. No default → return 404
+
+File format is TOML (Proxmox's answer file format). You provide the content, pxe-pilot serves it.
 
 ## Endpoints
 
-| Method | Path      | Description                                |
-| ------ | --------- | ------------------------------------------ |
-| POST   | `/answer` | Proxmox installer hits this. Returns TOML. |
-| GET    | `/health` | Health check with config summary.          |
-
-## Configuration
-
-| Variable                | Default    | Description                      |
-| ----------------------- | ---------- | -------------------------------- |
-| `PXE_PILOT_PORT`        | `8080`     | Listen port                      |
-| `PXE_PILOT_ANSWERS_DIR` | `/answers` | TOML files location              |
-| `PXE_PILOT_LOG_LEVEL`   | `info`     | `debug`, `info`, `warn`, `error` |
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/answer` | Proxmox installer hits this, receives TOML |
+| GET | `/menu.ipxe` | Dynamic iPXE menu (auto-generated from assets) |
+| GET | `/boot.ipxe` | Initial boot script (chains to menu) |
+| GET | `/hosts` | List all configured MACs |
+| GET | `/hosts/{mac}` | View what a MAC would receive |
+| GET | `/health` | Health check |
+| Static | `/assets/*` | Boot assets (vmlinuz, initrd) |
 
 ## Development
 
 ```bash
-# Open in devcontainer (VS Code / Codespaces), then:
-pytest server/tests/ -v
+# Run tests
+cd server && pytest tests/ -v --cov=. --cov-report=term-missing
+
+# Run linting
 ruff check server/
+ruff format --check server/
+
+# Open in dev container (matches CI environment)
+# See .devcontainer/README.md
 ```
 
 ## License
