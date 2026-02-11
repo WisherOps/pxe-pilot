@@ -1,0 +1,13 @@
+# HTTP-only deployment: pxe-pilot serves answer files and assets only
+# Use this when you have your own TFTP server (netboot.xyz, dnsmasq, etc.)
+# See: docs/deployment/http-only.md
+
+services:
+  pxe-pilot:
+    image: ghcr.io/wisherops/pxe-pilot-server:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./answers:/answers:ro
+      - ./assets:/assets:ro
+    restart: unless-stopped

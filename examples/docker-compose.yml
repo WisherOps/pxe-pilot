@@ -1,8 +1,14 @@
+# Bare-bones deployment: pxe-pilot with built-in TFTP + HTTP
+# Requires: host networking for TFTP (UDP port 69)
+# See: docs/deployment/bare-bones.md
+
 services:
   pxe-pilot:
-    image: ghcr.io/wisherops/pxe-pilot:latest
-    ports:
-      - "8080:8080"
+    image: ghcr.io/wisherops/pxe-pilot-server:latest
+    network_mode: host
     volumes:
       - ./answers:/answers:ro
+      - ./assets:/assets:ro
+    environment:
+      - PXE_PILOT_BOOT_ENABLED=true
     restart: unless-stopped
