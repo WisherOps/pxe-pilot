@@ -1,6 +1,7 @@
 """Shared test fixtures for pxe-pilot server tests."""
 
 import importlib
+
 import pytest
 from fastapi.testclient import TestClient
 

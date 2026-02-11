@@ -1,5 +1,7 @@
 # pxe-pilot
 
+![CI Status](https://github.com/WisherOps/pxe-pilot/actions/workflows/ci.yml/badge.svg)
+
 HTTP answer file server for Proxmox VE automated installations.
 
 Proxmox 8.2+ supports fetching answer files over HTTP during automated installs.
