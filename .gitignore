@@ -66,3 +66,6 @@ sandbox/provision/sandbox-config/hosts/*.toml
 *.avhdx
 
 .smoke-test-assets/
+
+# Claude local workspace (planning, archives, scratch)
+.claude.local/
