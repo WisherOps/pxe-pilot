@@ -78,7 +78,7 @@ DEMO_VM_RAM=8192 ./run-demo.sh up
 
 1. Vagrant creates **pxe-vm** (Ubuntu 22.04) and provisions it:
    - Installs Docker
-   - Builds the pxe-pilot image from source (`server/Dockerfile`)
+   - Pulls `ghcr.io/wisherops/pxe-pilot-server:latest` from GitHub Container Registry
    - Starts pxe-pilot (HTTP + TFTP) and dnsmasq (DHCP) via docker-compose
    - Creates fake PXE assets for chain testing
 

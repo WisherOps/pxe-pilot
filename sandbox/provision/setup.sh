@@ -70,10 +70,10 @@ else
     info "Docker already installed."
 fi
 
-# ── Build pxe-pilot image ───────────────────────────────────────
+# ── Pull pxe-pilot image ────────────────────────────────────────
 
-info "Building pxe-pilot image from /vagrant/server ..."
-docker build -t pxe-pilot:local /vagrant/server
+info "Pulling pxe-pilot image from GitHub Container Registry..."
+docker pull ghcr.io/wisherops/pxe-pilot-server:latest
 
 # ── Create work directory + fake assets ──────────────────────────
 
@@ -171,7 +171,7 @@ info "Writing docker-compose.yml..."
 cat > "$WORK_DIR/docker-compose.yml" <<EOF
 services:
   pxe-pilot:
-    image: pxe-pilot:local
+    image: ghcr.io/wisherops/pxe-pilot-server:latest
     network_mode: host
     restart: unless-stopped
     volumes:
