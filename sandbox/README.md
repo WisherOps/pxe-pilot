@@ -123,6 +123,9 @@ By default the sandbox creates fake assets (tiny placeholder files) for chain te
 # SSH into pxe-vm
 vagrant ssh pxe-vm
 
+# Fix permissions (if upgrading from older sandbox)
+sudo chown -R vagrant:vagrant /opt/pxe-pilot-sandbox
+
 # Build assets from ISO URL (defaults to 9.1-1)
 bash /vagrant/sandbox/provision/build-assets.sh
 

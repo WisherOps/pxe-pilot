@@ -21,6 +21,11 @@ SKIP_VERIFY="${SKIP_VERIFY:-false}"
 info() { echo ">>> $*"; }
 error() { echo "ERROR: $*" >&2; exit 1; }
 
+# Check write permissions on work directory
+if [ ! -w "$WORK_DIR" ]; then
+    error "No write permission on $WORK_DIR. Try: sudo chown -R vagrant:vagrant $WORK_DIR"
+fi
+
 # Detect ANSWER_URL from running pxe-pilot container if not set
 if [ -z "$ANSWER_URL" ]; then
     PXE_IP=$(docker inspect pxe-pilot-sandbox-pxe-pilot-1 2>/dev/null \

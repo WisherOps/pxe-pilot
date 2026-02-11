@@ -78,6 +78,7 @@ docker pull ghcr.io/wisherops/pxe-pilot-server:latest
 # ── Create work directory + fake assets ──────────────────────────
 
 mkdir -p "$WORK_DIR/assets"
+chown -R vagrant:vagrant "$WORK_DIR"
 
 if [ ! -d "$WORK_DIR/assets/proxmox-ve" ]; then
     info "Creating fake PXE assets for chain testing..."
