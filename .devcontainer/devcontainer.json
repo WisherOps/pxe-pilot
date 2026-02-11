@@ -22,10 +22,58 @@
         "ms-python.python",
         "charliermarsh.ruff",
         "ms-python.debugpy"
+      ],
+      "tasks": [
+        {
+          "label": "CI: Run Tests",
+          "type": "shell",
+          "command": "cd server && pytest tests/ -v --cov=. --cov-report=term-missing --cov-fail-under=80",
+          "problemMatcher": [],
+          "group": {
+            "kind": "test",
+            "isDefault": true
+          },
+          "presentation": {
+            "reveal": "always",
+            "panel": "new"
+          }
+        },
+        {
+          "label": "CI: Run Lint",
+          "type": "shell",
+          "command": "ruff check server/ && ruff format --check server/",
+          "problemMatcher": [],
+          "group": "build",
+          "presentation": {
+            "reveal": "always",
+            "panel": "new"
+          }
+        },
+        {
+          "label": "CI: Run All Checks",
+          "type": "shell",
+          "command": "cd server && pytest tests/ -v --cov=. --cov-report=term-missing --cov-fail-under=80 && cd .. && ruff check server/ && ruff format --check server/",
+          "problemMatcher": [],
+          "group": "build",
+          "presentation": {
+            "reveal": "always",
+            "panel": "new"
+          }
+        },
+        {
+          "label": "CI: Fix Linting",
+          "type": "shell",
+          "command": "ruff check server/ --fix && ruff format server/",
+          "problemMatcher": [],
+          "presentation": {
+            "reveal": "always",
+            "panel": "new"
+          }
+        }
       ]
     }
   },
   "forwardPorts": [8080],
-  "postCreateCommand": "pip install --no-cache-dir -e './server[dev]' 2>/dev/null || pip install --no-cache-dir -r requirements-dev.txt",
+  "postCreateCommand": "echo '✅ Dev container ready! Use Command Palette (Ctrl+Shift+P) → Tasks: Run Task → CI: Run All Checks'",
   "remoteUser": "root"
 }
